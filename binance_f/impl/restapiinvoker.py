@@ -3,6 +3,9 @@ from binance_f.exception.binanceapiexception import BinanceApiException
 from binance_f.impl.utils import *
 # from binance_f.base.printobject import *
 
+import logging
+logger = logging.getLogger(__name__)
+
 
 def check_response(json_wrapper):
     if json_wrapper.contain_key("success"):
@@ -33,28 +36,28 @@ def call_sync(request):
         response = requests.get(request.host + request.url, headers=request.header)
         limits = get_limits_usage(response)
         json_wrapper = parse_json_from_string(response.text)
-        print(response.text)
+        logger.debug(response.text)
         check_response(json_wrapper)
         return (request.json_parser(json_wrapper),limits)
     elif request.method == "POST":
         response = requests.post(request.host + request.url, headers=request.header)
         limits = get_limits_usage(response)
         json_wrapper = parse_json_from_string(response.text)
-        print(response.text)
+        logger.debug(response.text)
         check_response(json_wrapper)
         return (request.json_parser(json_wrapper),limits)
     elif request.method == "DELETE":
         response = requests.delete(request.host + request.url, headers=request.header)
         limits = get_limits_usage(response)
         json_wrapper = parse_json_from_string(response.text)
-        print(response.text)
+        logger.debug(response.text)
         check_response(json_wrapper)
         return (request.json_parser(json_wrapper),limits)
     elif request.method == "PUT":
         response = requests.put(request.host + request.url, headers=request.header)
         limits = get_limits_usage(response)
         json_wrapper = parse_json_from_string(response.text)
-        print(response.text)
+        logger.debug(response.text)
         check_response(json_wrapper)
         return (request.json_parser(json_wrapper),limits)
 

@@ -1,4 +1,5 @@
-
+import pandas as pd
+from binance_f.impl.utils.timeservice import maybe_convert_timestamp_to_datetime
 
 class MarkPrice:
 
@@ -19,3 +20,13 @@ class MarkPrice:
         result.time = json_data.get_int("time")
 
         return result
+
+    def to_pandas(self, as_datetime=False):
+        res = pd.Series({
+            'symbol': self.symbol,
+            'markPrice': self.markPrice,
+            'lastFundingRate': self.lastFundingRate,
+            'nextFundingTime': maybe_convert_timestamp_to_datetime(self.nextFundingTime, as_datetime),
+            'time': maybe_convert_timestamp_to_datetime(self.time, as_datetime)
+        })
+        return res

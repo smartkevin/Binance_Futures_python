@@ -3,6 +3,42 @@ from binance_f.impl.restapirequestimpl import RestApiRequestImpl
 from binance_f.impl.restapiinvoker import call_sync
 from binance_f.model.constant import *
 
+from binance_f.impl.utils.timeservice import maybe_convert_timestamp_to_datetime, maybe_convert_to_milliseconds
+import pandas as pd
+
+def load_hist_data_decorator(hist_func):
+    pass
+
+
+from functools import wraps
+
+def hist_data_decor(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        print('before')
+        print(kwargs)
+        startTime = kwargs.get('startTime', None)
+        endTime = kwargs.get('endTime', None)
+        interval = kwargs.get('interval', '1m')
+        limit = kwargs.get('limit', 10)
+
+        if startTime is not None:
+            startTime = maybe_convert_to_milliseconds(startTime)
+
+        if endTime is not None:
+            endTime = maybe_convert_to_milliseconds(endTime)
+
+        kwargs.update({
+            'startTime': startTime,
+            'endTime': endTime
+        })
+
+        res = func(*args, **kwargs)
+        print('after')
+        print(kwargs)
+        return res
+    return wrapper
+
 
 class RequestClient(object):
 
@@ -13,6 +49,7 @@ class RequestClient(object):
             api_key: The public key applied from Binance.
             secret_key: The private key applied from Binance.
             server_url: The URL name like "https://api.binance.com".
+            as_datetime: bool, whether convert timestamp to datetime
         """
         api_key = None
         secret_key = None
@@ -28,6 +65,8 @@ class RequestClient(object):
         except Exception:
             pass
         self.limits = {}
+        self._as_datetime = kwargs.get('as_datetime', False)
+
     
     def refresh_limits(self,limits):
         for k,v in limits.items():
@@ -42,8 +81,9 @@ class RequestClient(object):
         Test connectivity to the Rest API and get the current server time.
         """
         response = call_sync(self.request_impl.get_servertime())
-        self.refresh_limits(response[1])
-        return response[0]
+        self.refresh_limits(response[1])        
+        dt = maybe_convert_timestamp_to_datetime(response[0], self._as_datetime)
+        return dt
                
     def get_exchange_information(self) -> any:
         """
@@ -106,7 +146,8 @@ class RequestClient(object):
         response = call_sync(self.request_impl.get_aggregate_trades_list(symbol, fromId, startTime, endTime, limit))
         self.refresh_limits(response[1])
         return response[0]
-              
+
+    @hist_data_decor      
     def get_candlestick_data(self, symbol: 'str', interval: 'CandlestickInterval', 
                             startTime: 'long' = None, endTime: 'long' = None, limit: 'int' = None) -> any:
         """
@@ -118,7 +159,7 @@ class RequestClient(object):
         """
         response = call_sync(self.request_impl.get_candlestick_data(symbol, interval, startTime, endTime, limit))
         self.refresh_limits(response[1])
-        return response[0]
+        return pd.DataFrame([d.to_pandas(self._as_datetime) for d in response[0]])
             
     def get_mark_price(self, symbol: 'str') -> any:
         """
@@ -130,9 +171,10 @@ class RequestClient(object):
         """
         response = call_sync(self.request_impl.get_mark_price(symbol))
         self.refresh_limits(response[1])
-        return response[0]
-            
-    def get_funding_rate(self, symbol: 'str', startTime: 'long' = None, endTime: 'str' = None, limit: 'int' = None) -> any:
+        return response[0].to_pandas(self._as_datetime)        
+
+    @hist_data_decor        
+    def get_funding_rate(self, symbol: 'str', startTime: 'long' = None, endTime: 'long' = None, limit: 'int' = None) -> any:
         """
         Get Funding Rate History (MARKET_DATA)
 
@@ -140,7 +182,7 @@ class RequestClient(object):
         """
         response = call_sync(self.request_impl.get_funding_rate(symbol, startTime, endTime, limit))
         self.refresh_limits(response[1])
-        return response[0]
+        return pd.DataFrame([c.to_pandas(self._as_datetime) for c in response[0]])
        
     def get_ticker_price_change_statistics(self, symbol: 'str' = None) -> any:
         """
@@ -165,7 +207,7 @@ class RequestClient(object):
         """
         response = call_sync(self.request_impl.get_symbol_price_ticker(symbol))
         self.refresh_limits(response[1])
-        return response[0]
+        return pd.DataFrame([d.to_pandas() for d in response[0]])
 
     def get_symbol_orderbook_ticker(self, symbol: 'str' = None) -> any:
         """

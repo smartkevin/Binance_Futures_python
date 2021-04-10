@@ -1,3 +1,5 @@
+import pandas as pd
+
 class SymbolPrice:
 
     def __init__(self):
@@ -10,3 +12,6 @@ class SymbolPrice:
         result.symbol = json_data.get_string("symbol")
         result.price = json_data.get_float("price")
         return result
+
+    def to_pandas(self):
+        return pd.Series({'symbol': self.symbol, 'price': self.price})

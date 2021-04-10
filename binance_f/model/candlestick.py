@@ -1,3 +1,6 @@
+import pandas as pd
+from binance_f.impl.utils.timeservice import maybe_convert_timestamp_to_datetime
+
 class Candlestick:
 
     def __init__(self):
@@ -32,3 +35,20 @@ class Candlestick:
         result.ignore = val[11]
   
         return result
+
+    def to_pandas(self, as_datetime):
+        res = pd.Series({
+            'openTime': maybe_convert_timestamp_to_datetime(self.openTime, as_datetime),
+            'open': self.open,
+            'high': self.high,
+            'low': self.low,
+            'close': self.close,
+            'volume': self.volume,
+            'closeTime': maybe_convert_timestamp_to_datetime(self.closeTime, as_datetime),
+            'quoteAssetVolume': self.quoteAssetVolume,
+            'numTrades': self.numTrades,
+            'takerBuyBaseAssetVolume': self.takerBuyBaseAssetVolume,
+            'takerBuyQuoteAssetVolume': self.takerBuyQuoteAssetVolume,
+            'ignore': self.ignore,
+        })
+        return res
