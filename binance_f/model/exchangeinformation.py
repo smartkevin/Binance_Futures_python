@@ -102,3 +102,20 @@ class ExchangeInformation:
 
         return result
 
+    def get_rate_limit_value(self, limit_type, limit_interval):
+        limit = None
+        for element in self.rateLimits:
+            if (element.rateLimitType != limit_type) | (element.iterval != limit_type):
+                continue
+            limit = element.limit
+
+        if limit is None:
+            raise ValueError(f"Invalid (limit_type, limit_interval):  ({limit_type} {limit_interval})")
+        return limit
+
+    def get_request_weight_limit(self):
+        return self.get_rate_limit_value('REQUEST_WEIGHT', 'MINUTE')
+            
+                
+
+

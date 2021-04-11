@@ -3,41 +3,80 @@ from binance_f.impl.restapirequestimpl import RestApiRequestImpl
 from binance_f.impl.restapiinvoker import call_sync
 from binance_f.model.constant import *
 
-from binance_f.impl.utils.timeservice import maybe_convert_timestamp_to_datetime, maybe_convert_to_milliseconds
+from binance_f.impl.utils.timeservice import maybe_convert_timestamp_to_datetime, maybe_convert_to_milliseconds, interval_to_milliseconds, get_current_timestamp
 import pandas as pd
+import time
 
-def load_hist_data_decorator(hist_func):
-    pass
+
+import logging
+logger = logging.getLogger(__name__)
 
 
 from functools import wraps
 
-def hist_data_decor(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        print('before')
-        print(kwargs)
-        startTime = kwargs.get('startTime', None)
-        endTime = kwargs.get('endTime', None)
-        interval = kwargs.get('interval', '1m')
-        limit = kwargs.get('limit', 10)
+def hist_data_decor(time_col):
+    def real_decor(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            interval = kwargs.get('interval', '1d')
+            assert interval is not None, "Interval cann't be None"
+            interval_in_ms = interval_to_milliseconds(interval)
+            endTime = kwargs.get('endTime', None)
+            startTime = kwargs.get('startTime', None)
+            if endTime is None:
+                endTime = get_current_timestamp()
+            else:
+                endTime = maybe_convert_to_milliseconds(endTime)
+            
+            if startTime is None:
+                startTime = endTime - interval_in_ms
+            else:
+                startTime = maybe_convert_to_milliseconds(startTime)
 
-        if startTime is not None:
-            startTime = maybe_convert_to_milliseconds(startTime)
+            limit = kwargs.get('limit')
+            if limit is None:
+                limit = int(round((endTime - startTime) / interval_in_ms)) + 1
 
-        if endTime is not None:
-            endTime = maybe_convert_to_milliseconds(endTime)
+            #update kwargs
+            kwargs.update({
+                'startTime': startTime,
+                'endTime': endTime,
+                'limit': limit
+            })
 
-        kwargs.update({
-            'startTime': startTime,
-            'endTime': endTime
-        })
+            # loop function call due to request limit
+            res = []
+            iter_count = 0            
+            max_count = 100#(endTime - startTime) / interval_in_ms 
+            while iter_count <= max_count:
+                iter_res = func(*args, **kwargs)
+                res.append(iter_res)
+                iter_count += 1
 
-        res = func(*args, **kwargs)
-        print('after')
-        print(kwargs)
-        return res
-    return wrapper
+                latest_dt = iter_res[time_col].max()
+                logger.debug(
+                    'start: {}, end: {}, #records: {}, latest_dt: {}'.format(                            
+                        iter_res[time_col].min(), 
+                        iter_res[time_col].max(),
+                        iter_res.shape[0],
+                        latest_dt
+                    )
+                )
+                startTime = maybe_convert_to_milliseconds(latest_dt) + interval_in_ms
+                if startTime >= endTime:
+                    break
+                if iter_count > max_count:
+                    logger.warn(f"break because max_iter_count reached: iter_count={iter_count}, max_count={max_count}")
+                    break
+                
+                kwargs.update({
+                    'startTime': startTime,
+                })
+            
+            res = pd.concat(res)
+            return res
+        return wrapper
+    return real_decor
 
 
 class RequestClient(object):
@@ -147,7 +186,7 @@ class RequestClient(object):
         self.refresh_limits(response[1])
         return response[0]
 
-    @hist_data_decor      
+    @hist_data_decor('openTime')
     def get_candlestick_data(self, symbol: 'str', interval: 'CandlestickInterval', 
                             startTime: 'long' = None, endTime: 'long' = None, limit: 'int' = None) -> any:
         """
@@ -173,8 +212,8 @@ class RequestClient(object):
         self.refresh_limits(response[1])
         return response[0].to_pandas(self._as_datetime)        
 
-    @hist_data_decor        
-    def get_funding_rate(self, symbol: 'str', startTime: 'long' = None, endTime: 'long' = None, limit: 'int' = None) -> any:
+    @hist_data_decor('fundingTime')        
+    def get_funding_rate(self, symbol: 'str', startTime: 'long' = None, endTime: 'long' = None, limit: 'int' = None, interval='8h') -> any:
         """
         Get Funding Rate History (MARKET_DATA)
 

@@ -24,7 +24,7 @@ def convert_cst_in_millisecond_to_utc(time_in_ms):
 
 def maybe_convert_timestamp_to_datetime(ms, convert):
     if convert:
-        return datetime.fromtimestamp(ms/1000)
+        return datetime.fromtimestamp(ms/1000, tz=pytz.utc)
     return ms
 
 def maybe_convert_to_milliseconds(dt):    
