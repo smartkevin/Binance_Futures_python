@@ -6,6 +6,7 @@ from binance_f.model.constant import *
 from binance_f.impl.utils.timeservice import maybe_convert_timestamp_to_datetime, maybe_convert_to_milliseconds, interval_to_milliseconds, get_current_timestamp
 import pandas as pd
 import time
+from datetime import datetime
 
 
 import logging
@@ -13,6 +14,10 @@ logger = logging.getLogger(__name__)
 
 
 from functools import wraps
+
+import os
+CACHE_DIR = 'D:\\work\\projects\\crypto\\data\\binance'
+
 
 def hist_data_decor(time_col):
     def real_decor(func):
@@ -36,14 +41,47 @@ def hist_data_decor(time_col):
             limit = kwargs.get('limit')
             if limit is None:
                 limit = int(round((endTime - startTime) / interval_in_ms)) + 1
+            
 
+            # load from existing store
+            fname = func.__name__
+            sym = args[1] if len(args) > 1 else kwargs['symbol']
+            store_key = f'{fname}/{sym}/{interval}'
+            
+            exist_data = None
+            with pd.HDFStore(os.path.join(CACHE_DIR, 'histdata.h5')) as store:
+                if store_key in store:
+                    exist_data = store.get(store_key)
+            
+            if exist_data is None:
+                latest_dt = datetime(2010, 1, 1)
+            else:
+                latest_dt = exist_data[time_col].max()
+                        
+            if endTime <= maybe_convert_to_milliseconds(latest_dt):
+                # do nothing
+                logger.debug('no need to download data')
+                return exist_data
+            else:                
+                request_startTime = maybe_convert_to_milliseconds(latest_dt) + interval_in_ms
+                if request_startTime < endTime:
+                    logger.debug('need to download data in ({}, {}]'.format(latest_dt, maybe_convert_timestamp_to_datetime(endTime, True)))
+                else:
+                    logger.debug('startTime > endTime, no need to download data')
+                    return exist_data
+
+            logger.debug('downloading data for store key: {sk} from {sdt} to {edt}'.format(
+                sk=store_key,
+                sdt=maybe_convert_timestamp_to_datetime(startTime, True),
+                edt=maybe_convert_timestamp_to_datetime(endTime, True),
+            ))
             #update kwargs
             kwargs.update({
-                'startTime': startTime,
+                'startTime': request_startTime,
                 'endTime': endTime,
                 'limit': limit
             })
-
+                        
             # loop function call due to request limit
             res = []
             iter_count = 0            
@@ -62,19 +100,27 @@ def hist_data_decor(time_col):
                         latest_dt
                     )
                 )
-                startTime = maybe_convert_to_milliseconds(latest_dt) + interval_in_ms
-                if startTime >= endTime:
+                request_startTime = maybe_convert_to_milliseconds(latest_dt) + interval_in_ms
+                if request_startTime >= endTime:
                     break
                 if iter_count > max_count:
                     logger.warn(f"break because max_iter_count reached: iter_count={iter_count}, max_count={max_count}")
                     break
                 
                 kwargs.update({
-                    'startTime': startTime,
+                    'startTime': request_startTime,
                 })
             
-            res = pd.concat(res)
-            return res
+            new_data = pd.concat(res)
+            all_data = pd.concat([exist_data, new_data], axis=0, ignore_index=True)                        
+            with pd.HDFStore(os.path.join(CACHE_DIR, 'histdata.h5')) as store:
+                append = store_key in store                   
+                store.put(store_key, new_data, format='table', append=append)
+            
+            dt1 = maybe_convert_timestamp_to_datetime(startTime, True)
+            dt2 = maybe_convert_timestamp_to_datetime(endTime, True)
+            output = all_data[(all_data[time_col]>=dt1) & (all_data[time_col]<=dt2)]
+            return output
         return wrapper
     return real_decor
 
