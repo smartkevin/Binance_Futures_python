@@ -8,6 +8,8 @@ from binance_f.model.candlestick import Candlestick
 from binance_f.model.markprice import MarkPrice
 from binance_f.model.openinterest import OpenInterest
 from binance_f.model.fundingrate import FundingRate
+from binance_f.model.indexpriceklines import IndexPriceKlines
+from binance_f.model.markpriceklines import MarkPriceKlines
 from binance_f.model.tickerpricechangestatistics import TickerPriceChangeStatistics
 from binance_f.model.symbolprice import SymbolPrice
 from binance_f.model.symbolorderbook import SymbolOrderBook

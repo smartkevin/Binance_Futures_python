@@ -11,6 +11,7 @@ from datetime import datetime
 
 import logging
 logger = logging.getLogger(__name__)
+logger.propagate = False
 
 
 from functools import wraps
@@ -37,21 +38,24 @@ def hist_data_decor(time_col):
                 startTime = endTime - interval_in_ms
             else:
                 startTime = maybe_convert_to_milliseconds(startTime)
-
-            limit = kwargs.get('limit')
-            if limit is None:
-                limit = int(round((endTime - startTime) / interval_in_ms)) + 1
             
-
             # load from existing store
             fname = func.__name__
             sym = args[1] if len(args) > 1 else kwargs['symbol']
-            store_key = f'{fname}/{sym}/{interval}'
+            store_path = os.path.join(CACHE_DIR, f'histdata/{sym}.h5')
+            store_key = f'{fname}/interval_{interval}'
             
             exist_data = None
-            with pd.HDFStore(os.path.join(CACHE_DIR, 'histdata.h5')) as store:
+            with pd.HDFStore(store_path) as store:
                 if store_key in store:
                     exist_data = store.get(store_key)
+                    print('loaded {} rows from store with min_datetime {} and max_datetime {}'.format(
+                        exist_data.shape[0],
+                        exist_data[time_col].min(),
+                        exist_data[time_col].max(),
+                    ))
+                else:
+                    print(f'store_key {store_key} does not exist in store {store_path}')
             
             if exist_data is None:
                 latest_dt = datetime(2010, 1, 1)
@@ -70,16 +74,15 @@ def hist_data_decor(time_col):
                     logger.debug('startTime > endTime, no need to download data')
                     return exist_data
 
-            logger.debug('downloading data for store key: {sk} from {sdt} to {edt}'.format(
+            print('downloading data for store key: {sk} from {sdt} to {edt}'.format(
                 sk=store_key,
-                sdt=maybe_convert_timestamp_to_datetime(startTime, True),
+                sdt=maybe_convert_timestamp_to_datetime(request_startTime, True),
                 edt=maybe_convert_timestamp_to_datetime(endTime, True),
             ))
             #update kwargs
             kwargs.update({
                 'startTime': request_startTime,
-                'endTime': endTime,
-                'limit': limit
+                'endTime': endTime
             })
                         
             # loop function call due to request limit
@@ -113,7 +116,7 @@ def hist_data_decor(time_col):
             
             new_data = pd.concat(res)
             all_data = pd.concat([exist_data, new_data], axis=0, ignore_index=True)                        
-            with pd.HDFStore(os.path.join(CACHE_DIR, 'histdata.h5')) as store:
+            with pd.HDFStore(store_path) as store:
                 append = store_key in store                   
                 store.put(store_key, new_data, format='table', append=append)
             
@@ -266,6 +269,26 @@ class RequestClient(object):
         GET /fapi/v1/fundingRate
         """
         response = call_sync(self.request_impl.get_funding_rate(symbol, startTime, endTime, limit))
+        self.refresh_limits(response[1])
+        return pd.DataFrame([c.to_pandas(self._as_datetime) for c in response[0]])
+
+    @hist_data_decor('openTime')        
+    def get_index_price_klines(self, symbol: 'str', interval: 'CandlestickInterval', 
+                        startTime: 'long' = None, endTime: 'long' = None, limit: 'int' = None) -> any:
+        """
+        GET /fapi/v1/indexPriceKlines
+        """
+        response = call_sync(self.request_impl.get_index_price_klines(symbol, interval, startTime, endTime, limit))
+        self.refresh_limits(response[1])
+        return pd.DataFrame([c.to_pandas(self._as_datetime) for c in response[0]])
+
+    @hist_data_decor('openTime')        
+    def get_mark_price_klines(self, symbol: 'str', interval: 'CandlestickInterval', 
+                        startTime: 'long' = None, endTime: 'long' = None, limit: 'int' = None) -> any:
+        """
+        GET /fapi/v1/indexPriceKlines
+        """
+        response = call_sync(self.request_impl.get_mark_price_klines(symbol, interval, startTime, endTime, limit))
         self.refresh_limits(response[1])
         return pd.DataFrame([c.to_pandas(self._as_datetime) for c in response[0]])
        
